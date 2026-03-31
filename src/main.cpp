@@ -95,39 +95,51 @@ static double jaccard(const unordered_set<uint64_t>& A, const unordered_set<uint
 int main(){
     ios::sync_with_stdio(false); cin.tie(nullptr);
 
-    // Read two programs
-    auto p1 = read_program_lines(cin);
-    auto p2 = read_program_lines(cin);
+    // Read entire stdin into lines to support both modes (cheat and anticheat)
+    vector<string> all;
+    string line;
+    while (std::getline(cin, line)) all.push_back(line);
 
-    // Ignore the rest of stdin (reference input) but read to EOF to be clean
-    // Not necessary to process.
+    // Find lines equal to "endprogram" (trimmed)
+    vector<size_t> ends;
+    for (size_t i=0;i<all.size();++i){ if (trim(all[i])=="endprogram") ends.push_back(i); }
 
-    string s1, s2;
-    if (!p1.empty()){
-        s1.reserve( (size_t)accumulate(p1.begin(), p1.end(), 0ull, [](uint64_t a, const string& b){ return a + b.size() + 1; }) );
-        for (auto &l: p1){ s1 += l; s1.push_back('\n'); }
+    if (ends.size() >= 2){
+        // Anticheat mode: two programs separated by endprogram markers
+        vector<string> p1(all.begin(), all.begin()+ends[0]);
+        vector<string> p2(all.begin()+ends[0]+1, all.begin()+ends[1]);
+
+        string s1, s2;
+        if (!p1.empty()){
+            s1.reserve( (size_t)accumulate(p1.begin(), p1.end(), 0ull, [](uint64_t a, const string& b){ return a + b.size() + 1; }) );
+            for (auto &l1: p1){ s1 += l1; s1.push_back('\n'); }
+        }
+        if (!p2.empty()){
+            s2.reserve( (size_t)accumulate(p2.begin(), p2.end(), 0ull, [](uint64_t a, const string& b){ return a + b.size() + 1; }) );
+            for (auto &l2: p2){ s2 += l2; s2.push_back('\n'); }
+        }
+
+        auto t1 = tokenize(s1);
+        auto t2 = tokenize(s2);
+
+        // Build shingles with multiple k and average for robustness
+        vector<int> ks = {2,3,4};
+        double sum=0.0; int cnt=0;
+        for(int k: ks){
+            auto sA = shingles(t1,k);
+            auto sB = shingles(t2,k);
+            sum += jaccard(sA, sB);
+            ++cnt;
+        }
+        double s = cnt? (sum / cnt) : 0.5;
+
+        // Clamp to [0,1] and output with sufficient precision
+        if (s < 0.0) s = 0.0; if (s > 1.0) s = 1.0;
+        cout.setf(std::ios::fixed); cout<<setprecision(6)<<s<<"\n";
+    } else {
+        // Cheat mode fallback: echo input program unchanged to stdout
+        for (const auto &l : all) cout << l << '\n';
     }
-    if (!p2.empty()){
-        s2.reserve( (size_t)accumulate(p2.begin(), p2.end(), 0ull, [](uint64_t a, const string& b){ return a + b.size() + 1; }) );
-        for (auto &l: p2){ s2 += l; s2.push_back('\n'); }
-    }
 
-    auto t1 = tokenize(s1);
-    auto t2 = tokenize(s2);
-
-    // Build shingles with multiple k and average for robustness
-    vector<int> ks = {2,3,4};
-    double sum=0.0; int cnt=0;
-    for(int k: ks){
-        auto sA = shingles(t1,k);
-        auto sB = shingles(t2,k);
-        sum += jaccard(sA, sB);
-        ++cnt;
-    }
-    double s = cnt? (sum / cnt) : 0.5;
-
-    // Clamp to [0,1] and output with sufficient precision
-    if (s < 0.0) s = 0.0; if (s > 1.0) s = 1.0;
-    cout.setf(std::ios::fixed); cout<<setprecision(6)<<s<<"\n";
     return 0;
 }
