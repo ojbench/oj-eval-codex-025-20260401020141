@@ -137,8 +137,69 @@ int main(){
         if (s < 0.0) s = 0.0; if (s > 1.0) s = 1.0;
         cout.setf(std::ios::fixed); cout<<setprecision(6)<<s<<"\n";
     } else {
-        // Cheat mode fallback: echo input program unchanged to stdout
-        for (const auto &l : all) cout << l << '\n';
+        // Cheat mode: alpha-rename identifiers to reduce lexical similarity.
+        // Only consider content before a single endprogram if present.
+        vector<string> prog;
+        if (!ends.empty()) prog.assign(all.begin(), all.begin()+ends[0]);
+        else prog = all;
+        string src;
+        if (!prog.empty()){
+            src.reserve( (size_t)accumulate(prog.begin(), prog.end(), 0ull, [](uint64_t a, const string& b){ return a + b.size() + 1; }) );
+            for (auto &l : prog){ src += l; src.push_back('\n'); }
+        }
+
+        // Tokenize preserving raw text and classify
+        enum T { TK_WS, TK_PAREN, TK_PUNCT, TK_NUM, TK_KEY, TK_ID, TK_OTHER };
+        struct Tok { string text; T kind; };
+        static const unordered_set<string> keywords = {
+            "function","block","set","if","while","for","array.create","array.set","array.get",
+            "print","call","return","let","lambda","begin","end","true","false","main"
+        };
+
+        vector<Tok> toks; toks.reserve(src.size()/2);
+        auto is_ident_start = [](char c){ return isalpha((unsigned char)c) || c=='_'; };
+        auto is_ident_char  = [](char c){ return isalnum((unsigned char)c) || c=='_' || c=='.'; };
+        for (size_t i=0;i<src.size();){
+            char c = src[i];
+            if (isspace((unsigned char)c)){
+                size_t j=i; while(j<src.size() && isspace((unsigned char)src[j])) ++j;
+                toks.push_back({src.substr(i,j-i), TK_WS}); i=j; continue;
+            }
+            if (c=='(' || c==')' || c=='[' || c==']' || c=='{' || c=='}'){
+                toks.push_back({string(1,c), TK_PAREN}); ++i; continue;
+            }
+            if (isdigit((unsigned char)c)){
+                size_t j=i; bool hasdot=false;
+                while(j<src.size() && (isdigit((unsigned char)src[j]) || (!hasdot && src[j]=='.'))){ if(src[j]=='.') hasdot=true; ++j; }
+                toks.push_back({src.substr(i,j-i), TK_NUM}); i=j; continue;
+            }
+            if (is_ident_start(c)){
+                size_t j=i; string id;
+                while(j<src.size() && is_ident_char(src[j])){ id.push_back(src[j]); ++j; }
+                string low=id; for(char &ch:low) ch=tolower((unsigned char)ch);
+                if (keywords.count(low)) toks.push_back({id, TK_KEY});
+                else toks.push_back({id, TK_ID});
+                i=j; continue;
+            }
+            // Other single-char punctuation
+            toks.push_back({string(1,c), TK_PUNCT}); ++i;
+        }
+
+        // Build renaming map for IDs (exclude reserved 'main' handled above as keyword)
+        unordered_map<string,string> mp; int idx=1;
+        auto new_name = [&](){ return string("v") + to_string(idx++); };
+        for (auto &t : toks){
+            if (t.kind == TK_ID){
+                if (!mp.count(t.text)) mp[t.text] = new_name();
+            }
+        }
+
+        // Reconstruct program with normalized whitespace: preserve original whitespace tokens around others
+        // but replace IDs by mapped names.
+        for (auto &t : toks){
+            if (t.kind == TK_ID){ cout << mp[t.text]; }
+            else { cout << t.text; }
+        }
     }
 
     return 0;
